@@ -1,4 +1,4 @@
-import blest
+from blest import create_request_handler
 
 async def hello(params, context):
   return {
@@ -16,7 +16,7 @@ async def greet(params, context):
 async def fail(params, context):
   raise Exception('Intentional failure')
 
-router = blest.create_request_handler({
+router = create_request_handler({
   'hello': hello,
   'greet': greet,
   'fail': fail

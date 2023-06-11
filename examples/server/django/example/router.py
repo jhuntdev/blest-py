@@ -1,4 +1,4 @@
-from .blest import create_request_handler
+from blest import create_request_handler
 
 async def hello(params, context):
   return {

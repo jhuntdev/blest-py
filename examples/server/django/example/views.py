@@ -1,8 +1,8 @@
 import json
 from django.http.response import JsonResponse
-from .router import router
+from . import router
 
-async def blest(request):
+async def index(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)

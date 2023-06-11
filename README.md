@@ -1,6 +1,6 @@
-# BLESTpy
+# BLEST Python
 
-The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching and selective returns, and provides a modern alternative to REST. It includes examples for Django and Flask.
+The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching and selective returns, and provides a modern alternative to REST. It includes examples for Django, FastAPI, and Flask.
 
 To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BLEST%20White%20Paper.pdf
 
@@ -15,7 +15,7 @@ To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BL
 
 ## Installation
 
-Install BLESTpy from PyPI.
+Install BLEST Python from PyPI.
 
 ```bash
 pip install blest
@@ -29,14 +29,14 @@ Use the `create_request_handler` function to create a request handler suitable f
 
 ```python
 from flask import Flask, make_response, request
-import blest
+from blest import create_request_handler
 
 async def greet(params, context):
   return {
     'geeting': 'Hi, ' + params.get('name') + '!'
   }
 
-router = blest.create_request_handler({
+router = create_request_handler({
   'greet': greet
 })
 

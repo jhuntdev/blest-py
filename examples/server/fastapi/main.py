@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
-import router
+from . import router
 
 app = FastAPI()
 
