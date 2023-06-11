@@ -1,0 +1,11 @@
+services:
+  api:
+    build:
+      context: .
+      target: builder
+    container_name: blest-fastapi-example
+    environment:
+      PORT: 8000
+    stop_signal: SIGINT
+    ports:
+      - '8000:8000'

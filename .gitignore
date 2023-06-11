@@ -1,0 +1,40 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+.env.*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.coverage-rc
+
+# Unit test cache
+.pytest_cache/
+
+# IDE files
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.pycharm.*
+.idea/
+
+# Editor-specific temporary/backup files
+*~
+*.swp
+*.bak
+*.tmp
+
+# Development environment
+venv/
+env/
+ENV/
