@@ -38,3 +38,6 @@ htmlcov/
 venv/
 env/
 ENV/
+
+# Apple
+.DS_Store
