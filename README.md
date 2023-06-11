@@ -25,7 +25,7 @@ pip install blest
 
 ### Server-side
 
-Use the `create_request_handler` function to create a request handler suitable for use in a Python application. The following example uses Flask, but you can find examples in other frameworks [here](/examples).
+Use the `create_request_handler` function to create a request handler suitable for use in a Python application. The following example uses Flask, but you can find examples with other frameworks [here](/examples).
 
 ```python
 from flask import Flask, make_response, request
@@ -62,7 +62,7 @@ Client-side libraries assist in batching and processing requests and commands. C
 
 ```javascript
 import React from 'react';
-import { useBlestRequest, useBlestCommand } from 'blest-js/react';
+import { useBlestRequest, useBlestCommand } from 'blest-react';
 
 // Use the useBlestRequest hook for fetching data
 const MyComponent = () => {
