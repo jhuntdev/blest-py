@@ -34,9 +34,9 @@ from blest import create_server
 
 # Create some middleware (optional)
 def auth_middleware(params, context):
-  if params.name:
-    context.user = {
-      'name': params.name
+  if params['name']:
+    context['user'] = {
+      'name': params['name']
     }
   else:
     raise Exception('Unauthorized')
@@ -44,7 +44,7 @@ def auth_middleware(params, context):
 # Create a route controller
 def greet_controller(params, context):
   return {
-    'greeting': f'Hi, {context.user.name}!'
+    'greeting': f"Hi, {context['user']['name']}!"
   }
 
 # Define your router
