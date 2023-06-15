@@ -6,7 +6,7 @@ To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BL
 
 ## Features
 
-- JSON Payloads - Reduce parsing time and overhead
+- Built on JSON - Reduce parsing time and overhead
 - Request Batching - Save bandwidth and reduce load times
 - Compact Payloads - Save more bandwidth
 - Selective Returns - Save even more bandwidth
@@ -25,7 +25,42 @@ pip install blest
 
 ### Server-side
 
-Use the `create_request_handler` function to create a request handler suitable for use in a Python application. The following example uses Flask, but you can find examples with other frameworks [here](/examples).
+Use the `create_server` function to create a standalone HTTP server, or use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Both functions allow you to define middleware in your router.
+
+### create_server
+
+```python
+from blest import create_server
+
+# Create some middleware (optional)
+def auth_middleware(params, context):
+  if params.name:
+    context.user = {
+      'name': params.name
+    }
+  else:
+    raise Exception('Unauthorized')
+
+# Create a route controller
+def greet_controller(params, context):
+  return {
+    'greeting': f'Hi, {context.user.name}!'
+  }
+
+# Define your router
+router = {
+  'greet': [auth_middleware, greet_controller]
+}
+
+run = create_server(router)
+
+if __name__ == '__main__':
+  run()
+```
+
+### create_request_handler
+
+The following example uses Flask, but you can find examples with other frameworks [here](examples).
 
 ```python
 from flask import Flask, make_response, request
@@ -36,9 +71,11 @@ async def greet(params, context):
     'geeting': 'Hi, ' + params.get('name') + '!'
   }
 
-router = create_request_handler({
+routes = {
   'greet': greet
-})
+}
+
+router = create_request_handler(routes)
 
 app = Flask(__name__)
 
@@ -61,24 +98,30 @@ Client-side libraries assist in batching and processing requests and commands. C
 #### React
 
 ```javascript
-import React from 'react';
-import { useBlestRequest, useBlestCommand } from 'blest-react';
+import React from 'react'
+import { useBlestRequest, useBlestCommand } from 'blest-react'
 
 // Use the useBlestRequest hook for fetching data
 const MyComponent = () => {
-  const { data, loading, error } = useBlestRequest('listItems', { limit: 24 });
+  const { data, loading, error } = useBlestRequest('listItems', { limit: 24 })
 
-  // Render your component
-  // ...
-};
+  return (
+    // Render your component
+  )
+}
 
 // Use the useBlestCommand hook for sending data
 const MyForm = () => {
-  const [submitMyForm, { data, loading, error }] = useBlestCommand('submitForm');
+  const [submitMyForm, { data, loading, error }] = useBlestCommand('submitForm')
+  
+  const handleSubmit = (values) => {
+    return submitMyForm(values)
+  }
 
-  // Render your form
-  // ...
-};
+  return (
+    // Render your form
+  )
+}
 ```
 
 ## Contributing

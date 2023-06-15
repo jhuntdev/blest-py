@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="BLEST",
-    version="0.0.3",
+    version="0.0.4",
     author="JHunt",
     author_email="blest@jhunt.dev",
     description="The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer)",
@@ -22,6 +22,10 @@ setup(
     ],
     install_requires=[
         "asyncio",
+        "aiohttp",
+        "json",
+        "copy",
+        "os"
     ],
     python_requires=">=3.6",
     platforms="any",

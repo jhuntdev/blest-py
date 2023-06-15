@@ -35,7 +35,34 @@
 # ]
 # -------------------------------------------------------------------------------------------------
 
+from aiohttp import web
 import asyncio
+import json
+import copy
+import os
+
+def create_server(routes, options=None):
+  request_handler = create_request_handler(routes, options)
+  async def post_handler(request):
+    try:
+      json_data = await request.json()
+    except ValueError:
+      return web.Response(status=400)
+    result, error = await request_handler(json_data, {})
+    if error:
+      print(error)
+      raise web.Response(status=500)
+    elif result:
+      result_json = json.dumps(result)
+      return web.Response(text=result_json, content_type='application/json')
+    else:
+      print(Exception('Request handler failed to return anything'))
+      raise web.Response(status=500)
+  app = web.Application()
+  app.add_routes([web.post('/', post_handler)])
+  def run(port=os.getenv('PORT') or 8080):
+    web.run_app(app, port=port)
+  return run
 
 def create_request_handler(routes, options=None):
   if options:
@@ -83,11 +110,24 @@ def route_not_found(*args):
 
 async def route_reducer(handler, request, context):
   try:
-    result = await handler(request['params'], context)
-    error = None
+    safe_context = copy.deepcopy(context)
+    if type(handler) is list:
+      for i in range(len(handler)):
+        if asyncio.iscoroutinefunction(handler[i]):
+          temp_result = await handler[i](request['params'], safe_context)
+        else:
+          temp_result = handler[i](request['params'], safe_context)
+        if i == len(handler) - 1:
+          result = temp_result
+        elif temp_result:
+          raise Exception('Middleware should not return anything but may mutate context')
+    else:
+      if asyncio.iscoroutinefunction(handler):
+        result = await handler(request['params'], safe_context)
+      else:
+        result = handler(request['params'], safe_context)
     if not isinstance(result, dict):
-      result = None
-      error = Exception('Result should be a JSON object')
+      raise Exception('Result should be a JSON object')
     if request['selector']:
       result = filter_object(result, request['selector'])
     return [request['id'], request['route'], result, None]
