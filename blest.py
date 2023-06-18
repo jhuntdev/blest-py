@@ -35,14 +35,17 @@
 # ]
 # -------------------------------------------------------------------------------------------------
 
+import aiohttp
 from aiohttp import web
 import asyncio
+import uuid
 import json
 import copy
 import os
 
-def create_server(routes, options=None):
-  request_handler = create_request_handler(routes, options)
+def create_http_server(request_handler, options=None):
+  if options:
+    print('The "options" argument is not yet used, but may be used in the future.')
   async def post_handler(request):
     try:
       json_data = await request.json()
@@ -64,22 +67,83 @@ def create_server(routes, options=None):
     web.run_app(app, port=port)
   return run
 
+class EventEmitter:
+  def __init__(self):
+    self.listeners = {}
+  def once(self, name, listener):
+    if name not in self.listeners:
+      self.listeners[name] = []
+    self.listeners[name].append(listener)
+  def emit(self, name, *args):
+    if name in self.listeners:
+      for listener in self.listeners[name]:
+        listener(*args)
+      del self.listeners[name]
+
+def create_http_client(url, options=None):
+  if options:
+    print('The "options" argument is not yet used, but may be used in the future.')
+  max_batch_size = 100
+  queue = []
+  timer = None
+  emitter = EventEmitter()
+  async def process():
+    nonlocal queue
+    nonlocal timer
+    new_queue = queue[:max_batch_size]
+    del queue[:max_batch_size]
+    if not queue:
+      timer = None
+    else:
+      timer = asyncio.create_task(process())
+    async with aiohttp.ClientSession() as session:
+      try:
+        response = await session.post(url, json=new_queue, headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
+        response.raise_for_status()
+        response_json = await response.json()
+        for r in response_json:
+          emitter.emit(r[0], r[2], r[3])
+      except aiohttp.ClientError as e:
+        for q in new_queue:
+          emitter.emit(q[0], None, response_json)
+  async def request(route, params=None, selector=None):
+    nonlocal timer
+    if not route:
+      raise ValueError('Route is required')
+    elif params and not isinstance(params, dict):
+      raise ValueError('Params should be a dict')
+    elif selector and not isinstance(selector, list):
+      raise ValueError('Selector should be a list')
+    id = str(uuid.uuid4())
+    future = asyncio.Future()
+    def callback(result, error):
+      if error:
+        future.set_exception(Exception(error['message']))
+      else:
+        future.set_result(result)
+    emitter.once(id, callback)
+    queue.append([id, route, params, selector])
+    if not timer:
+      timer = asyncio.create_task(process())
+    return await future
+  return request
+
 def create_request_handler(routes, options=None):
   if options:
     print('The "options" argument is not yet used, but may be used in the future.')
   async def handler(requests, context={}):
     if not requests or not isinstance(requests, list):
-      return handle_error(400, 'Request body should be a JSON array')
+      return handle_error(400, 'Requests should be a list')
     dedupe = []
     promises = []
     for i in range(len(requests)):
       request = requests[i]
       if not isinstance(request, list) or len(request) < 2 or not isinstance(request[0], str) or not isinstance(request[1], str):
-        return handle_error(400, 'Request items should be an array with a unique ID and an route')
+        return handle_error(400, 'Request items should be a list with a unique ID and a route')
       if len(request) > 2 and request[2] and not isinstance(request[2], dict):
-        return handle_error(400, 'Request item parameters should be a JSON object')
+        return handle_error(400, 'Request item parameters should be a dict')
       if len(request) > 3 and request[3] and not isinstance(request[3], list):
-        return handle_error(400, 'Request item selector should be a JSON array')
+        return handle_error(400, 'Request item selector should be a list')
       if request[0] in dedupe:
         return handle_error(400, 'Request items should have unique IDs')
       dedupe.append(request[0])
@@ -127,7 +191,7 @@ async def route_reducer(handler, request, context):
       else:
         result = handler(request['params'], safe_context)
     if not isinstance(result, dict):
-      raise Exception('Result should be a JSON object')
+      raise Exception('Result should be a dict')
     if request['selector']:
       result = filter_object(result, request['selector'])
     return [request['id'], request['route'], result, None]

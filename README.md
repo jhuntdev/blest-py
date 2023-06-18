@@ -4,6 +4,8 @@ The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted
 
 To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BLEST%20White%20Paper.pdf
 
+For a front-end implementation in React, please visit https://github.com/jhunt/blest-react
+
 ## Features
 
 - Built on JSON - Reduce parsing time and overhead
@@ -18,45 +20,12 @@ To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BL
 Install BLEST Python from PyPI.
 
 ```bash
-pip install blest
+python3 -m pip install blest
 ```
 
 ## Usage
 
-### Server-side
-
-Use the `create_server` function to create a standalone HTTP server, or use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Both functions allow you to define middleware in your router.
-
-### create_server
-
-```python
-from blest import create_server
-
-# Create some middleware (optional)
-def auth_middleware(params, context):
-  if params['name']:
-    context['user'] = {
-      'name': params['name']
-    }
-  else:
-    raise Exception('Unauthorized')
-
-# Create a route controller
-def greet_controller(params, context):
-  return {
-    'greeting': f"Hi, {context['user']['name']}!"
-  }
-
-# Define your router
-router = {
-  'greet': [auth_middleware, greet_controller]
-}
-
-run = create_server(router)
-
-if __name__ == '__main__':
-  run()
-```
+Use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Use the `create_http_server` function to create a standalone HTTP server for your request handler. Use the `create_http_client` to create BLEST HTTP clients to interact with other servers.
 
 ### create_request_handler
 
@@ -66,22 +35,32 @@ The following example uses Flask, but you can find examples with other framework
 from flask import Flask, make_response, request
 from blest import create_request_handler
 
-async def greet(params, context):
+# Create some middleware (optional)
+async def auth_middleware(params, context):
+  if params['name']:
+    context['user'] = {
+      'name': params['name']
+    }
+  else:
+    raise Exception('Unauthorized')
+
+# Create a route controller
+async def greet_controller(params, context):
   return {
-    'geeting': 'Hi, ' + params.get('name') + '!'
+    'greeting': f"Hi, {context['user']['name']}!"
   }
 
-routes = {
-  'greet': greet
-}
-
-router = create_request_handler(routes)
+# Create a request_handler
+request_handler = create_request_handler({
+  'greet': [auth_middleware, greet_controller]
+})
 
 app = Flask(__name__)
 
+# Use the request handler
 @app.post('/')
 async def index():
-  result, error = await router(request.json)
+  result, error = await request_handler(request.json)
   if error:
     resp = make_response(error, 500)
     resp.headers['Content-Type'] = 'application/json'
@@ -91,37 +70,52 @@ async def index():
     return resp
 ```
 
-### Client-side
+### create_http_server
 
-Client-side libraries assist in batching and processing requests and commands. Currently available for React with other frameworks coming soon.
+```python
+from blest import create_http_server, create_request_handler
 
-#### React
+# Create some middleware (optional)
+async def auth_middleware(params, context):
+  if params['name']:
+    context['user'] = {
+      'name': params['name']
+    }
+  else:
+    raise Exception('Unauthorized')
 
-```javascript
-import React from 'react'
-import { useBlestRequest, useBlestCommand } from 'blest-react'
-
-// Use the useBlestRequest hook for fetching data
-const MyComponent = () => {
-  const { data, loading, error } = useBlestRequest('listItems', { limit: 24 })
-
-  return (
-    // Render your component
-  )
-}
-
-// Use the useBlestCommand hook for sending data
-const MyForm = () => {
-  const [submitMyForm, { data, loading, error }] = useBlestCommand('submitForm')
-  
-  const handleSubmit = (values) => {
-    return submitMyForm(values)
+# Create a route controller
+async def greet_controller(params, context):
+  return {
+    'greeting': f"Hi, {context['user']['name']}!"
   }
 
-  return (
-    // Render your form
-  )
-}
+# Create a request_handler
+request_handler = create_request_handler({
+  'greet': [auth_middleware, greet_controller]
+})
+
+run = create_http_server(request_handler)
+
+if __name__ == '__main__':
+  run()
+```
+
+### create_http_client
+
+```python
+from blest import create_http_client
+
+# Create a client
+request = create_http_client('http://localhost:8080')
+
+async def main():
+  # Send a request
+  try:
+    result = await request('greet', { 'name': 'Steve' }, ['greeting'])
+    # Do something with the result
+  except Exception as error:
+    # Do something in case of error
 ```
 
 ## Contributing

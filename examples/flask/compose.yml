@@ -1,0 +1,11 @@
+services:
+  api:
+    build:
+      context: .
+      target: builder
+    container_name: blest-flask-example
+    environment:
+      PORT: 8080
+    stop_signal: SIGINT
+    ports:
+      - '8080:8080'
