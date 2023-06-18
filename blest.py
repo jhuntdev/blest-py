@@ -134,7 +134,7 @@ def create_request_handler(routes, options=None):
   async def handler(requests, context={}):
     if not requests or not isinstance(requests, list):
       return handle_error(400, 'Requests should be a list')
-    dedupe = []
+    unique_ids = []
     promises = []
     for i in range(len(requests)):
       request = requests[i]
@@ -144,9 +144,9 @@ def create_request_handler(routes, options=None):
         return handle_error(400, 'Request item parameters should be a dict')
       if len(request) > 3 and request[3] and not isinstance(request[3], list):
         return handle_error(400, 'Request item selector should be a list')
-      if request[0] in dedupe:
+      if request[0] in unique_ids:
         return handle_error(400, 'Request items should have unique IDs')
-      dedupe.append(request[0])
+      unique_ids.append(request[0])
       request_object = {
         'id': request[0],
         'route': request[1],
