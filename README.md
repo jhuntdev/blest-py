@@ -25,7 +25,7 @@ python3 -m pip install blest
 
 ## Usage
 
-Use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Use the `create_http_server` function to create a standalone HTTP server for your request handler. Use the `create_http_client` to create BLEST HTTP clients to interact with other servers.
+Use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Use the `create_http_server` function to create a standalone HTTP server for your request handler. Use the `create_http_client` function to create a BLEST HTTP client.
 
 ### create_request_handler
 
