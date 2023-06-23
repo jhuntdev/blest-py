@@ -1,10 +1,10 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 with open("README.md", encoding="utf-8") as readme_file:
     readme = readme_file.read()
 
 setup(
-    name="BLEST",
+    name="blest",
     version="0.0.9",
     author="JHunt",
     author_email="blest@jhunt.dev",
@@ -12,7 +12,7 @@ setup(
     long_description=readme,
     long_description_content_type="text/markdown",
     url="https://github.com/jhuntdev/blest-py",
-    packages=find_packages(),
+    packages=["."],
     classifiers=[
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Libraries",

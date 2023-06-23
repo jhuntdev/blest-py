@@ -13,7 +13,7 @@ async def hello(params, context):
 
 async def greet(params, context):
   return {
-    'geeting': 'Hi, ' + params.get('name') + '!'
+    'greeting': 'Hi, ' + params.get('name') + '!'
   }
 
 async def fail(params, context):

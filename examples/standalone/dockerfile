@@ -1,12 +1,11 @@
-FROM python:slim AS builder
-ARG CACHEBUST=1
+FROM python:3.8-alpine AS builder
 
 EXPOSE 8080
-WORKDIR /app
+WORKDIR /usr/src/app
 
-COPY requirements.txt .
-RUN python3 -m pip install -r requirements.txt --no-cache-dir
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python3", "app.py", "--host=0.0.0.0", "--port=8080"]
+CMD ["python", "app.py", "--host=0.0.0.0", "--port=8080"]
