@@ -1,4 +1,4 @@
-FROM python:3.8-alpine AS builder
+FROM python:slim AS builder
 
 EXPOSE 8080
 WORKDIR /usr/src/app

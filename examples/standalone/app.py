@@ -24,4 +24,4 @@ request_handler = create_request_handler({
 
 server = create_http_server(request_handler)
 
-server.run()
+server()
