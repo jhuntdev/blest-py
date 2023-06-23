@@ -42,10 +42,11 @@ import uuid
 import json
 import copy
 import os
+import re
 
 def create_http_server(request_handler, options=None):
   if options:
-    print('The "options" argument is not yet used, but may be used in the future.')
+    print('The "options" argument is not yet used, but may be used in the future')
   async def post_handler(request):
     try:
       json_data = await request.json()
@@ -82,7 +83,7 @@ class EventEmitter:
 
 def create_http_client(url, options=None):
   if options:
-    print('The "options" argument is not yet used, but may be used in the future.')
+    print('The "options" argument is not yet used, but may be used in the future')
   max_batch_size = 100
   queue = []
   timer = None
@@ -131,6 +132,7 @@ def create_http_client(url, options=None):
 def create_request_handler(routes, options=None):
   if options:
     print('The "options" argument is not yet used, but may be used in the future.')
+  route_regex = r'^[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9_\-]$'
   async def handler(requests, context={}):
     if not requests or not isinstance(requests, list):
       return handle_error(400, 'Requests should be a list')
@@ -138,22 +140,41 @@ def create_request_handler(routes, options=None):
     promises = []
     for i in range(len(requests)):
       request = requests[i]
-      if not isinstance(request, list) or len(request) < 2 or not isinstance(request[0], str) or not isinstance(request[1], str):
-        return handle_error(400, 'Request items should be a list with a unique ID and a route')
-      if len(request) > 2 and request[2] and not isinstance(request[2], dict):
+      request_length = len(request)
+      if not isinstance(request, list):
+        return handleError(400, 'Request item should be an array')
+      id = request[0] if len(request) > 0 else None
+      route = request[1] if len(request) > 1 else None
+      parameters = request[2] if len(request) > 2 else None
+      selector = request[3] if len(request) > 3 else None
+      if not id or not isinstance(id, str):
+        return handleError(400, 'Request item should have an ID')
+      if not route or not isinstance(route, str):
+        return handleError(400, 'Request items should have a route')
+      if not re.match(route_regex, route):
+        route_length = len(route)
+        if route_length < 2:
+          return handleError(400, 'Request item route should be at least two characters long')
+        elif route[route_length - 1] == '/':
+          return handleError(400, 'Request item route should not end in a forward slash')
+        elif not re.match(r'[a-zA-Z]', route[0]):
+          return handleError(400, 'Request item route should start with a letter')
+        else:
+          return handleError(400, 'Request item routes should contain only letters, numbers, dashes, underscores, and forward slashes')
+      if parameters and not isinstance(parameters, dict):
         return handle_error(400, 'Request item parameters should be a dict')
-      if len(request) > 3 and request[3] and not isinstance(request[3], list):
+      if selector and not isinstance(selector, list):
         return handle_error(400, 'Request item selector should be a list')
-      if request[0] in unique_ids:
+      if id in unique_ids:
         return handle_error(400, 'Request items should have unique IDs')
-      unique_ids.append(request[0])
+      unique_ids.append(id)
+      route_handler = routes.get(route) or route_not_found
       request_object = {
-        'id': request[0],
-        'route': request[1],
-        'params': request[2] if (len(request) > 2) else None,
-        'selector': request[3] if (len(request) > 3) else None
+        'id': id,
+        'route': route,
+        'parameters': parameters,
+        'selector': selector
       }
-      route_handler = routes.get(request[1]) or route_not_found
       promises.append(route_reducer(route_handler, request_object, context))
     results = await asyncio.gather(*promises)
     return handle_result(results)
@@ -175,21 +196,21 @@ def route_not_found(*args):
 async def route_reducer(handler, request, context):
   try:
     safe_context = copy.deepcopy(context)
-    if type(handler) is list:
+    if isinstance(handler, list):
       for i in range(len(handler)):
         if asyncio.iscoroutinefunction(handler[i]):
-          temp_result = await handler[i](request['params'], safe_context)
+          temp_result = await handler[i](request['parameters'], safe_context)
         else:
-          temp_result = handler[i](request['params'], safe_context)
+          temp_result = handler[i](request['parameters'], safe_context)
         if i == len(handler) - 1:
           result = temp_result
         elif temp_result:
           raise Exception('Middleware should not return anything but may mutate context')
     else:
       if asyncio.iscoroutinefunction(handler):
-        result = await handler(request['params'], safe_context)
+        result = await handler(request['parameters'], safe_context)
       else:
-        result = handler(request['params'], safe_context)
+        result = handler(request['parameters'], safe_context)
     if not isinstance(result, dict):
       raise Exception('Result should be a dict')
     if request['selector']:
