@@ -250,4 +250,4 @@ def filter_object(obj, arr):
           if len(filtered_nested_obj) > 0:
             filtered_obj[key[0]] = filtered_nested_obj
     return filtered_obj
-  return {}
+  return obj
