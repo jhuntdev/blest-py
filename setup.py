@@ -11,7 +11,7 @@ setup(
     description="The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching and selective returns, and provides a modern alternative to REST.",
     long_description=readme,
     long_description_content_type="text/markdown",
-    url="https://github.com/jhuntdev/blest-py",
+    url="https://blest.jhunt.dev",
     packages=["."],
     classifiers=[
         "Intended Audience :: Developers",
