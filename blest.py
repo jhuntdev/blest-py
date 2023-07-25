@@ -35,6 +35,7 @@
 # ]
 # -------------------------------------------------------------------------------------------------
 
+import traceback
 import aiohttp
 from aiohttp import web
 import asyncio
@@ -43,30 +44,228 @@ import json
 import copy
 import os
 import re
+import time
+import threading
+from datetime import datetime
+
+
+
+class Router:
+  def __init__(self, timeout=None, introspection=False):
+    self._before_middleware = []
+    self._after_middleware = []
+    self._timeout = timeout
+    self._introspection = introspection
+    self.routes = {}
+
+  def route(self, route):
+    def decorator(handler):
+      route_error = validate_route(route)
+      if route_error:
+        raise ValueError(route_error)
+      elif route in self.routes:
+        raise ValueError('Route already exists')
+      elif not handler or not callable(handler):
+        raise ValueError('Handler should be a function')
+      self.routes[route] = {
+        'handler': [*self._before_middleware, handler, *self._after_middleware],
+        'description': None,
+        'parameters': None,
+        'result': None,
+        'visible': self._introspection,
+        'validate': False,
+        'timeout': self._timeout
+      }
+    return decorator
+
+  def before(self):
+    def decorator(middleware):
+      self._before_middleware.append(middleware)
+      for route in self.routes.values():
+        route['handler'].insert(0, middleware)
+    return decorator
+  before_request = before
+  add_middleware = before
+
+  def after(self):
+    def decorator(middleware):
+      self._after_middleware.append(middleware)
+      for route in self.routes.values():
+        route['handler'].append(middleware)
+    return decorator
+  after_request = after
+
+  def describe(self, route: str, config: dict):
+    if route not in self.routes:
+      raise ValueError('Route does not exist')
+    elif not isinstance(config, dict):
+      raise ValueError('Configuration should be an object')
+
+    if 'description' in config:
+      if config['description'] is not None and not isinstance(config['description'], str):
+        raise ValueError('Description should be a string')
+      self.routes[route]['description'] = config['description']
+
+    if 'parameters' in config:
+      if config['parameters'] is not None and not isinstance(config['parameters'], dict):
+        raise ValueError('Parameters should be a JSON schema')
+      self.routes[route]['parameters'] = config['parameters']
+
+    if 'result' in config:
+      if config['result'] is not None and not isinstance(config['result'], dict):
+        raise ValueError('Result should be a JSON schema')
+      self.routes[route]['result'] = config['result']
+
+    if 'visible' in config:
+      if config['visible'] is not None and config['visible'] not in [True, False]:
+        raise ValueError('Visible should be true or false')
+      self.routes[route]['visible'] = config['visible']
+
+    if 'validate' in config:
+      if config['validate'] is not None and config['validate'] not in [True, False]:
+        raise ValueError('Validate should be true or false')
+      self.routes[route]['validate'] = config['validate']
+
+    if 'timeout' in config:
+      if config['timeout'] is not None and not isinstance(config['timeout'], int) or config['timeout'] <= 0:
+        raise ValueError('Timeout should be a positive integer')
+      self.routes[route]['timeout'] = config['timeout']
+
+  def merge(self, router):
+    if not router or not isinstance(router, Router):
+      raise ValueError('Router is required')
+
+    new_routes = list(router.routes.keys())
+    existing_routes = list(self.routes.keys())
+
+    if not new_routes:
+      raise ValueError('No routes to merge')
+
+    for route in new_routes:
+      if route in existing_routes:
+        raise ValueError('Cannot merge duplicate routes: ' + route)
+      else:
+        self.routes[route] = {
+          **router.routes[route],
+          'handler': self._before_middleware + router.routes[route]['handler'] + self._after_middleware,
+          'timeout': router.routes[route].get('timeout', self._timeout)
+        }
+
+  def namespace(self, prefix, router):
+    if not router or not isinstance(router, type(self)):
+      raise ValueError('Router is required')
+
+    prefix_error = validate_route(prefix)
+    if prefix_error:
+      raise ValueError(prefix_error)
+
+    new_routes = list(router.routes.keys())
+    existing_routes = list(self.routes.keys())
+
+    if not new_routes:
+      raise ValueError('No routes to namespace')
+
+    for route in new_routes:
+      ns_route = f"{prefix}/{route}"
+      if ns_route in existing_routes:
+        raise ValueError('Cannot merge duplicate routes: ' + ns_route)
+      else:
+        self.routes[ns_route] = {
+          **router.routes[route],
+          'handler': self._before_middleware + router.routes[route]['handler'] + self._after_middleware,
+          'timeout': router.routes[route].get('timeout', self._timeout)
+        }
+
+  async def handle(self, request, context=None):
+    return await handle_request(self.routes, request, context)
+
+  async def listen(self, **args):
+    request_handler = create_request_handler(self.routes)
+    server = create_http_server(request_handler)
+    server(*args)
+
+Blest = Router
+
+
 
 def create_http_server(request_handler, options=None):
   if options:
-    print('The "options" argument is not yet used, but may be used in the future')
-  async def post_handler(request):
-    try:
-      json_data = await request.json()
-    except ValueError:
-      return web.Response(status=400)
-    result, error = await request_handler(json_data, {})
-    if error:
-      print(error)
-      raise web.Response(status=500)
-    elif result:
-      result_json = json.dumps(result)
-      return web.Response(text=result_json, content_type='application/json')
+    options_error = validate_server_options(options)
+    if options_error:
+      raise ValueError(options_error)
+
+  url = options['url'] if options and 'url' in options else '/'
+
+  http_headers = {
+    'access-control-allow-origin': options['accessControlAllowOrigin'] if options and 'accessControlAllowOrigin' in options else ('*' if options and 'cors' in options and (isinstance(options['cors'], str) or options['cors'] is True) else ''),
+    'content-security-policy': options['contentSecurityPolicy'] if options and 'contentSecurityPolicy' in options else "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+    'cross-origin-opener-policy': options['crossOriginOpenerPolicy'] if options and 'crossOriginOpenerPolicy' in options else 'same-origin',
+    'cross-origin-resource-policy': options['crossOriginResourcePolicy'] if options and 'crossOriginResourcePolicy' in options else 'same-origin',
+    'origin-agent-cluster': options['originAgentCluster'] if options and 'originAgentCluster' in options else '?1',
+    'referrer-policy': options['referrerPolicy'] if options and 'referrerPolicy' in options else 'no-referrer',
+    'strict-transport-security': options['strictTransportSecurity'] if options and 'strictTransportSecurity' in options else 'max-age=15552000; includeSubDomains',
+    'x-content-type-options': options['xContentTypeOptions'] if options and 'xContentTypeOptions' in options else 'nosniff',
+    'x-dns-prefetch-control': options['xDnsPrefetchOptions'] if options and 'xDnsPrefetchOptions' in options else 'off',
+    'x-download-options': options['xDownloadOptions'] if options and 'xDownloadOptions' in options else 'noopen',
+    'x-frame-options': options['xFrameOptions'] if options and 'xFrameOptions' in options else 'SAMEORIGIN',
+    'x-permitted-cross-domain-policies': options['xPermittedCrossDomainPolicies'] if options and 'xPermittedCrossDomainPolicies' in options else 'none',
+    'x-xss-protection': options['xXssProtection'] if options and 'xXssProtection' in options else '0'
+  }
+
+  async def handle_req(request):
+    if request.path == url:
+      if request.method == 'POST':
+        try:
+          json_data = await request.json()
+        except json.JSONDecodeError as error:
+          return web.Response(status=400, headers=http_headers, text=str(error))
+        try:
+          context = {'headers': {key: value for key, value in request.headers.items()}}
+          result, error = await request_handler(json_data, context)
+          if error:
+            return web.Response(status=error['status'] if hasattr(error, 'status') else 500, headers=http_headers, text=str(error))
+          elif result:
+            json_result = json.dumps(result)
+            return web.Response(text=json_result, status=200, headers={ 'Content-Type': 'application/json', **http_headers })
+          else:
+            return web.Response(status=500, headers=http_headers)
+        except Exception as error:
+          print(error)
+          return web.Response(status=500, headers=http_headers, text=str(error))
+      elif request.method == 'OPTIONS':
+        return web.Response(status=204, headers=http_headers)
+      else:
+        return web.Response(status=405, headers=http_headers)
     else:
-      print(Exception('Request handler failed to return anything'))
-      raise web.Response(status=500)
+      return web.Response(status=404, headers=http_headers)
+
   app = web.Application()
-  app.add_routes([web.post('/', post_handler)])
-  def run(port=os.getenv('PORT') or 8080):
-    web.run_app(app, port=port)
+  app.router.add_route('*', '/{tail:.*}', handle_req)
+  
+  def run(port=os.getenv('PORT') or 8080, host=os.getenv('HOST') or 'localhost'):
+    web.run_app(app, port=port, host=host)
+
   return run
+
+
+
+def validate_server_options(options):
+  if not options:
+    return None
+  elif not isinstance(options, dict):
+    return 'Options should be an object'
+  else:
+    if 'url' in options:
+      if not isinstance(options['url'], str):
+        return 'URL should be a string'
+      elif not options['url'].startswith('/'):
+        return 'URL should begin with a forward slash'
+    if 'cors' in options:
+      if not isinstance(options['cors'], (str, bool)):
+        return 'CORS should be a string or boolean'
+  return None
+
+
 
 class EventEmitter:
   def __init__(self):
@@ -80,6 +279,18 @@ class EventEmitter:
       for listener in self.listeners[name]:
         listener(*args)
       del self.listeners[name]
+
+
+
+class BlestError(Exception):
+  def __init__(self, message='Internal Server Error', status=500, code=None, data=None):
+    self.message = message
+    self.status = status
+    self.code = code
+    self.data = data
+    super().__init__(self.message)
+
+
 
 def create_http_client(url, options=None):
   if options:
@@ -129,95 +340,219 @@ def create_http_client(url, options=None):
     return await future
   return request
 
-def create_request_handler(routes, options=None):
-  if options:
-    print('The "options" argument is not yet used, but may be used in the future.')
-  route_regex = r'^[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9_\-]$'
+
+
+def create_request_handler(routes):
+  route_keys = list(routes.keys())
+  my_routes = {}
+
+  for i in range(len(route_keys)):
+    key = route_keys[i]
+    route_error = validate_route(key)
+    if route_error:
+      raise Exception(f'{route_error}: {key}')
+
+    route = routes.get(key)
+    
+    if isinstance(route, list):
+      if not route:
+        raise Exception(f'Route has no handlers: {key}')
+      
+      for j in range(len(route)):
+        if not callable(route[j]):
+          raise Exception(f'All route handlers must be functions: {key}')
+        
+      my_routes[key] = {'handler': route}
+    
+    elif isinstance(route, dict):
+      if 'handler' not in route:
+        raise Exception(f'Route has no handlers: {key}')
+      
+      if not isinstance(route['handler'], list):
+        if not callable(route['handler']):
+          raise Exception(f'Route handler is not valid: {key}')
+        my_routes[key] = {
+          **route,
+          'handler': [route['handler']]
+        }
+      else:
+        for j in range(len(route['handler'])):
+          if not callable(route['handler'][j]):
+            raise Exception(f'All route handlers must be functions: {key}')    
+        my_routes[key] = route.copy()
+    
+    elif callable(route):
+      my_routes[key] = {'handler': [route]}
+    
+    else:
+      raise Exception(f'Route is missing handler: {key}')
+
   async def handler(requests, context={}):
-    if not requests or not isinstance(requests, list):
-      return handle_error(400, 'Requests should be a list')
-    unique_ids = []
-    promises = []
-    for i in range(len(requests)):
-      request = requests[i]
-      request_length = len(request)
-      if not isinstance(request, list):
-        return handleError(400, 'Request item should be an array')
-      id = request[0] if len(request) > 0 else None
-      route = request[1] if len(request) > 1 else None
-      parameters = request[2] if len(request) > 2 else None
-      selector = request[3] if len(request) > 3 else None
-      if not id or not isinstance(id, str):
-        return handleError(400, 'Request item should have an ID')
-      if not route or not isinstance(route, str):
-        return handleError(400, 'Request items should have a route')
-      if not re.match(route_regex, route):
-        route_length = len(route)
-        if route_length < 2:
-          return handleError(400, 'Request item route should be at least two characters long')
-        elif route[route_length - 1] == '/':
-          return handleError(400, 'Request item route should not end in a forward slash')
-        elif not re.match(r'[a-zA-Z]', route[0]):
-          return handleError(400, 'Request item route should start with a letter')
-        else:
-          return handleError(400, 'Request item routes should contain only letters, numbers, dashes, underscores, and forward slashes')
-      if parameters and not isinstance(parameters, dict):
-        return handle_error(400, 'Request item parameters should be a dict')
-      if selector and not isinstance(selector, list):
-        return handle_error(400, 'Request item selector should be a list')
-      if id in unique_ids:
-        return handle_error(400, 'Request items should have unique IDs')
-      unique_ids.append(id)
-      route_handler = routes.get(route) or route_not_found
-      request_object = {
-        'id': id,
-        'route': route,
-        'parameters': parameters,
-        'selector': selector
-      }
-      promises.append(route_reducer(route_handler, request_object, context))
-    results = await asyncio.gather(*promises)
-    return handle_result(results)
+    return await handle_request(my_routes, requests, context)
+
   return handler
+
+
+
+route_regex = r"^[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9]$"
+
+def validate_route(route):
+    if not route:
+        return 'Route is required'
+    elif not re.match(route_regex, route):
+        routeLength = len(route)
+        if routeLength < 2:
+            return 'Route should be at least two characters long'
+        elif route[-1] == '/':
+            return 'Route should not end in a forward slash'
+        elif not re.match(r"[a-zA-Z]", route[0]):
+            return 'Route should start with a letter'
+        elif not re.match(r"[a-zA-Z0-9]", route[-1]):
+            return 'Route should end with a letter or a number'
+        else:
+            return 'Route should contain only letters, numbers, dashes, underscores, and forward slashes'
+    elif re.search(r"\/[^a-zA-Z]", route):
+        return 'Sub-routes should start with a letter'
+    elif re.search(r"[^a-zA-Z0-9]\/", route):
+        return 'Sub-routes should end with a letter or a number'
+    elif re.search(r"\/[a-zA-Z0-9_\-]{0,1}\/", route):
+        return 'Sub-routes should be at least two characters long'
+    elif re.search(r"\/[a-zA-Z0-9_\-]$", route):
+        return 'Sub-routes should be at least two characters long'
+    elif re.search(r"^[a-zA-Z0-9_\-]\/", route):
+        return 'Sub-routes should be at least two characters long'
+    return None
+
+
+
+async def handle_request(routes, requests, context={}):
+  if not requests or not isinstance(requests, list):
+    return handle_error(400, 'Requests should be a list')
+  unique_ids = []
+  promises = []
+  for i in range(len(requests)):
+    request = requests[i]
+    request_length = len(request)
+    if not isinstance(request, list):
+      return handle_error(400, 'Request item should be an array')
+    id = request[0] if len(request) > 0 else None
+    route = request[1] if len(request) > 1 else None
+    parameters = request[2] if len(request) > 2 else None
+    selector = request[3] if len(request) > 3 else None
+    if not id or not isinstance(id, str):
+      return handle_error(400, 'Request item should have an ID')
+    if not route or not isinstance(route, str):
+      return handle_error(400, 'Request items should have a route')
+    if parameters and not isinstance(parameters, dict):
+      return handle_error(400, 'Request item parameters should be a dict')
+    if selector and not isinstance(selector, list):
+      return handle_error(400, 'Request item selector should be a list')
+    if id in unique_ids:
+      return handle_error(400, 'Request items should have unique IDs')
+    unique_ids.append(id)
+    this_route = routes.get(route)
+    route_handler = None
+    if isinstance(this_route, dict):
+      route_handler = this_route.get('handler') or route_not_found
+    else:
+      route_handler = this_route or route_not_found
+    request_object = {
+      'id': id,
+      'route': route,
+      'parameters': parameters,
+      'selector': selector
+    }
+    my_context = {
+      'requestId': id,
+      'routeName': route,
+      'selector': selector,
+      'requestTime': int(datetime.now().timestamp()),
+      **context
+    }
+    promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None))
+  results = await asyncio.gather(*promises)
+  return handle_result(results)
+
+
 
 def handle_result(result):
   return result, None
 
-def handle_error(code, message, headers=None):
+
+
+def handle_error(status, message):
   return None, {
-    'code': code,
-    'message': message,
-    'headers': headers
+    'status': status,
+    'message': message
   }
 
-def route_not_found(*args):
-  raise Exception('Route not found')
 
-async def route_reducer(handler, request, context):
-  try:
-    safe_context = copy.deepcopy(context)
+
+def route_not_found(*args):
+  raise BlestError('Not Found', status=404)
+
+
+
+async def route_reducer(handler, request, context, timeout=None):
+  
+  safe_context = copy.deepcopy(context)
+  route = request['route']
+  result = None
+
+  async def target():
+    nonlocal result
     if isinstance(handler, list):
       for i in range(len(handler)):
+        temp_result = None
         if asyncio.iscoroutinefunction(handler[i]):
           temp_result = await handler[i](request['parameters'], safe_context)
         else:
           temp_result = handler[i](request['parameters'], safe_context)
-        if i == len(handler) - 1:
-          result = temp_result
-        elif temp_result:
-          raise Exception('Middleware should not return anything but may mutate context')
+        if temp_result and temp_result is not None:
+          if result and result is not None:
+            print(f'Multiple handlers on the route "{route}" returned results')
+            return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
+          else:
+            result = temp_result
     else:
       if asyncio.iscoroutinefunction(handler):
         result = await handler(request['parameters'], safe_context)
-      else:
+      elif callable(handler):
         result = handler(request['parameters'], safe_context)
-    if not isinstance(result, dict):
-      raise Exception('Result should be a dict')
+      else:
+        print(f'Tried to resolve route "{route}" with handler of type "{type(handler)}')
+        return [request['id'], request['route'], None, {'message': 'Internal Server Error', 'status': 500}]
+    return result
+
+  try:
+    if timeout is not None and timeout > 0:
+      try:
+        timeout_ms = timeout / 1000
+        await asyncio.wait_for(target(), timeout=timeout_ms)
+      except asyncio.exceptions.TimeoutError:
+        print(f'The route "{route}" timed out after {timeout} milliseconds')
+        return [request['id'], request['route'], None, {'message': 'Internal Server Error', 'status': 500}]
+    else:
+      await target()
+
+    if result is None or not isinstance(result, dict):
+      print(f'The route "{route}" did not return a result object')
+      return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
     if request['selector']:
       result = filter_object(result, request['selector'])
     return [request['id'], request['route'], result, None]
   except Exception as error:
-    return [request['id'], request['route'], None, { 'message': str(error) }]
+    responseError = {
+      'message': str(error) or 'Internal Server Error',
+      'status': error.status or 500 if hasattr(error, 'status') else 500
+    }
+    if hasattr(error, 'code') and isinstance(error.code, str):
+      responseError['code'] = error.code
+    if hasattr(error, 'data') and isinstance(error.data, dict):
+      responseError['data'] = error.data
+    return [request['id'], request['route'], None, responseError]
+
+
 
 async def execute_async_functions(functions):
   results = []
@@ -225,6 +560,8 @@ async def execute_async_functions(functions):
     result = await function()
     results.append(result)
   return results
+
+
 
 def filter_object(obj, arr):
   if isinstance(arr, list):
