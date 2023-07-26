@@ -48,15 +48,18 @@ import time
 import threading
 from datetime import datetime
 
-
-
 class Router:
-  def __init__(self, timeout=None, introspection=False):
-    self._before_middleware = []
-    self._after_middleware = []
-    self._timeout = timeout
-    self._introspection = introspection
+
+  def __init__(self, options=None):
+    self._middleware = []
+    self._afterware = []
+    self._errorhandler = None
+    self._introspection = False
+    self._timeout = 5000
     self.routes = {}
+    if options:
+      self._timeout = options['timeout'] if options and 'timeout' in options else 5000
+      self._introspection = options['introspection'] if options and 'introspection' in options else False
 
   def route(self, route):
     def decorator(handler):
@@ -68,7 +71,7 @@ class Router:
       elif not handler or not callable(handler):
         raise ValueError('Handler should be a function')
       self.routes[route] = {
-        'handler': [*self._before_middleware, handler, *self._after_middleware],
+        'handler': [*self._middleware, handler, *self._afterware],
         'description': None,
         'parameters': None,
         'result': None,
@@ -78,22 +81,27 @@ class Router:
       }
     return decorator
 
-  def before(self):
+  def before_request(self):
     def decorator(middleware):
-      self._before_middleware.append(middleware)
-      for route in self.routes.values():
-        route['handler'].insert(0, middleware)
+      self._middleware.append(middleware)
     return decorator
-  before_request = before
-  add_middleware = before
+  middleware = before_request
+  before = before_request
 
-  def after(self):
-    def decorator(middleware):
-      self._after_middleware.append(middleware)
-      for route in self.routes.values():
-        route['handler'].append(middleware)
+  def add_middleware(self, middleware):
+    self._middleware.append(middleware)
+
+  def after_request(self):
+    def decorator(afterware):
+      self._afterware.append(afterware)
     return decorator
-  after_request = after
+  afterware = after_request
+  after = after_request
+
+  def errorhandler(self):
+    def decorator(errorhandler):
+      self._errorhandler = errorhandler
+    return decorator
 
   def describe(self, route: str, config: dict):
     if route not in self.routes:
@@ -103,32 +111,32 @@ class Router:
 
     if 'description' in config:
       if config['description'] is not None and not isinstance(config['description'], str):
-        raise ValueError('Description should be a string')
+        raise ValueError('Description should be a str')
       self.routes[route]['description'] = config['description']
 
     if 'parameters' in config:
       if config['parameters'] is not None and not isinstance(config['parameters'], dict):
-        raise ValueError('Parameters should be a JSON schema')
+        raise ValueError('Parameters should be a dict')
       self.routes[route]['parameters'] = config['parameters']
 
     if 'result' in config:
       if config['result'] is not None and not isinstance(config['result'], dict):
-        raise ValueError('Result should be a JSON schema')
+        raise ValueError('Result should be a dict')
       self.routes[route]['result'] = config['result']
 
     if 'visible' in config:
       if config['visible'] is not None and config['visible'] not in [True, False]:
-        raise ValueError('Visible should be true or false')
+        raise ValueError('Visible should be True or False')
       self.routes[route]['visible'] = config['visible']
 
     if 'validate' in config:
       if config['validate'] is not None and config['validate'] not in [True, False]:
-        raise ValueError('Validate should be true or false')
+        raise ValueError('Validate should be True or False')
       self.routes[route]['validate'] = config['validate']
 
     if 'timeout' in config:
       if config['timeout'] is not None and not isinstance(config['timeout'], int) or config['timeout'] <= 0:
-        raise ValueError('Timeout should be a positive integer')
+        raise ValueError('Timeout should be a positive int')
       self.routes[route]['timeout'] = config['timeout']
 
   def merge(self, router):
@@ -147,7 +155,7 @@ class Router:
       else:
         self.routes[route] = {
           **router.routes[route],
-          'handler': self._before_middleware + router.routes[route]['handler'] + self._after_middleware,
+          'handler': self._middleware + router.routes[route]['handler'] + self._afterware,
           'timeout': router.routes[route].get('timeout', self._timeout)
         }
 
@@ -172,19 +180,25 @@ class Router:
       else:
         self.routes[ns_route] = {
           **router.routes[route],
-          'handler': self._before_middleware + router.routes[route]['handler'] + self._after_middleware,
+          'handler': self._middleware + router.routes[route]['handler'] + self._afterware,
           'timeout': router.routes[route].get('timeout', self._timeout)
         }
 
   async def handle(self, request, context=None):
     return await handle_request(self.routes, request, context)
 
-  async def listen(self, **args):
-    request_handler = create_request_handler(self.routes)
-    server = create_http_server(request_handler)
-    server(*args)
 
-Blest = Router
+
+class Blest(Router):
+
+  def __init__(self, router_options=None, server_options=None):
+    self.server_options = server_options
+    super().__init__(router_options)
+
+  def listen(self, **args):
+    request_handler = create_request_handler(self.routes, self._errorhandler)
+    server = create_http_server(request_handler, self.server_options)
+    server(*args)
 
 
 
@@ -257,12 +271,12 @@ def validate_server_options(options):
   else:
     if 'url' in options:
       if not isinstance(options['url'], str):
-        return 'URL should be a string'
+        return '"url" option should be a str'
       elif not options['url'].startswith('/'):
-        return 'URL should begin with a forward slash'
+        return '"url" option should begin with a forward slash'
     if 'cors' in options:
       if not isinstance(options['cors'], (str, bool)):
-        return 'CORS should be a string or boolean'
+        return '"cors" option should be a str or bool'
   return None
 
 
@@ -342,7 +356,7 @@ def create_http_client(url, options=None):
 
 
 
-def create_request_handler(routes):
+def create_request_handler(routes, error_handler=None):
   route_keys = list(routes.keys())
   my_routes = {}
 
@@ -388,7 +402,7 @@ def create_request_handler(routes):
       raise Exception(f'Route is missing handler: {key}')
 
   async def handler(requests, context={}):
-    return await handle_request(my_routes, requests, context)
+    return await handle_request(my_routes, requests, context, error_handler)
 
   return handler
 
@@ -425,7 +439,7 @@ def validate_route(route):
 
 
 
-async def handle_request(routes, requests, context={}):
+async def handle_request(routes, requests, context, error_handler=None):
   if not requests or not isinstance(requests, list):
     return handle_error(400, 'Requests should be a list')
   unique_ids = []
@@ -459,7 +473,7 @@ async def handle_request(routes, requests, context={}):
     request_object = {
       'id': id,
       'route': route,
-      'parameters': parameters,
+      'parameters': parameters or {},
       'selector': selector
     }
     my_context = {
@@ -467,9 +481,9 @@ async def handle_request(routes, requests, context={}):
       'routeName': route,
       'selector': selector,
       'requestTime': int(datetime.now().timestamp()),
-      **context
+      **(context or {})
     }
-    promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None))
+    promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None, error_handler))
   results = await asyncio.gather(*promises)
   return handle_result(results)
 
@@ -493,7 +507,7 @@ def route_not_found(*args):
 
 
 
-async def route_reducer(handler, request, context, timeout=None):
+async def route_reducer(handler, request, context, timeout=None, error_handler=None):
   
   safe_context = copy.deepcopy(context)
   route = request['route']
@@ -542,6 +556,7 @@ async def route_reducer(handler, request, context, timeout=None):
       result = filter_object(result, request['selector'])
     return [request['id'], request['route'], result, None]
   except Exception as error:
+    traceback.print_exc()
     responseError = {
       'message': str(error) or 'Internal Server Error',
       'status': error.status or 500 if hasattr(error, 'status') else 500

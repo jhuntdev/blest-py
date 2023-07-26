@@ -10,20 +10,26 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUp(cls):
-        cls.router = Router(timeout=1000)
+        cls.router = Router({ 'timeout': 1000 })
         cls.benchmarks = []
 
-        @cls.router.before()
+        @cls.router.before_request()
         def middleware(parameters, context):
             context['test'] = {
                 'value': parameters['testValue']
             }
 
+        @cls.router.after_request()
+        def trailing_middleware(_, context):
+            complete_time = time.time()
+            difference = complete_time - context['requestTime']
+            cls.benchmarks.append(difference)
+
         @cls.router.route('basicRoute')
         def basic_route(parameters, context):
             return {'route': 'basicRoute', 'parameters': parameters, 'context': context}
 
-        router2 = Router(timeout=100)
+        router2 = Router({ 'timeout': 100 })
 
         @router2.route('mergedRoute')
         def merged_route(parameters, context):
@@ -44,12 +50,6 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
             raise error
 
         cls.router.namespace('subRoutes', router3)
-
-        @cls.router.after()
-        def trailing_middleware(_, context):
-            complete_time = time.time()
-            difference = complete_time - context['requestTime']
-            cls.benchmarks.append(difference)
 
     async def run_routes(self):
         # Basic route
@@ -84,7 +84,6 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(self.router, Router)
         self.assertEqual(len(self.router.routes), 4)
         self.assertTrue(hasattr(self.router, 'handle'))
-        self.assertTrue(hasattr(self.router, 'listen'))
 
     async def test_valid_requests(self):
         await self.run_routes()

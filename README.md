@@ -25,7 +25,32 @@ python3 -m pip install blest
 
 ## Usage
 
-Use the `create_request_handler` function to create a request handler suitable for use in an existing Python application. Use the `create_http_server` function to create a standalone HTTP server for your request handler. Use the `create_http_client` function to create a BLEST HTTP client.
+This default export of this library is an API very similar to Flask or FastAPI. For convenience it also provides a `create_request_handler` function to create a request handler suitable for use in an existing application, a `create_http_server` function to create a standalone HTTP server, and a `create_http_client` function to create a BLEST HTTP client.
+
+
+```python
+from blest import Blest
+
+app = new Blest({ 'timeout': 1000 })
+
+@app.before_request
+async def auth_middleware(params, context):
+  if params.get('name'):
+    context['user'] = {
+      'name': params['name']
+    }
+  else:
+    raise Exception('Unauthorized')
+
+@app.route('greet')
+async def greet_controller(params, context):
+  return {
+    'greeting': f"Hi, {context['user']['name']}!"
+  }
+
+if __name__ == '__main__':
+  app.listen(8080)
+```
 
 ### create_request_handler
 
