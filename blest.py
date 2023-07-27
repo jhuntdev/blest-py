@@ -520,8 +520,12 @@ async def route_reducer(handler, request, context, timeout=None, error_handler=N
         temp_result = None
         if asyncio.iscoroutinefunction(handler[i]):
           temp_result = await handler[i](request['parameters'], safe_context)
+        elif callable(handler[i]):
+          loop = asyncio.get_event_loop()
+          temp_result = await loop.run_in_executor(None, handler[i], request['parameters'], safe_context)
         else:
-          temp_result = handler[i](request['parameters'], safe_context)
+          print(f'Tried to resolve route "{route}" with handler of type "{type(handler[i])}"')
+          return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
         if temp_result and temp_result is not None:
           if result and result is not None:
             print(f'Multiple handlers on the route "{route}" returned results')
@@ -532,10 +536,11 @@ async def route_reducer(handler, request, context, timeout=None, error_handler=N
       if asyncio.iscoroutinefunction(handler):
         result = await handler(request['parameters'], safe_context)
       elif callable(handler):
-        result = handler(request['parameters'], safe_context)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, handler, request['parameters'], safe_context)
       else:
-        print(f'Tried to resolve route "{route}" with handler of type "{type(handler)}')
-        return [request['id'], request['route'], None, {'message': 'Internal Server Error', 'status': 500}]
+        print(f'Tried to resolve route "{route}" with handler of type "{type(handler)}"')
+        return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
     return result
 
   try:
