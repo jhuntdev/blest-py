@@ -47,15 +47,15 @@ import re
 import time
 import threading
 from datetime import datetime
+from functools import partial
 
 class Router:
 
   def __init__(self, options=None):
     self._middleware = []
     self._afterware = []
-    self._errorhandler = None
-    self._introspection = False
     self._timeout = 5000
+    self._introspection = False
     self.routes = {}
     if options:
       self._timeout = options['timeout'] if options and 'timeout' in options else 5000
@@ -97,11 +97,6 @@ class Router:
     return decorator
   afterware = after_request
   after = after_request
-
-  def errorhandler(self):
-    def decorator(errorhandler):
-      self._errorhandler = errorhandler
-    return decorator
 
   def describe(self, route: str, config: dict):
     if route not in self.routes:
@@ -191,13 +186,20 @@ class Router:
 
 class Blest(Router):
 
-  def __init__(self, router_options=None, server_options=None):
-    self.server_options = server_options
-    super().__init__(router_options)
+  def __init__(self, options=None):
+    self._options = options
+    self._errorhandler = None
+    super().__init__(options)
+
+  def errorhandler(self):
+    def decorator(errorhandler):
+      self._errorhandler = errorhandler
+      print('The @errorhandler() decorator is not currently used')
+    return decorator
 
   def listen(self, **args):
-    request_handler = create_request_handler(self.routes, self._errorhandler)
-    server = create_http_server(request_handler, self.server_options)
+    request_handler = create_request_handler(self.routes)
+    server = create_http_server(request_handler, self._options)
     server(*args)
 
 
@@ -306,9 +308,67 @@ class BlestError(Exception):
 
 
 
+class HttpClient:
+  def __init__(self, url, max_batch_size=25, batch_delay=10, headers={}):
+    self._url = url
+    self._max_batch_size = max_batch_size
+    self._batch_delay = batch_delay
+    self._headers = headers
+    self._timer = False
+    self._queue = []
+    self._emitter = EventEmitter()
+
+  async def _delay(self, func, time):
+    await asyncio.sleep(time / 1000)
+    await func()
+
+  async def _process(self):
+    new_queue = self._queue[:self._max_batch_size]
+    del self._queue[:self._max_batch_size]
+    if len(self._queue) == 0:
+      self._timer = False
+    else:
+      self._timer = True
+      asyncio.create_task(self._delay(self._process, self._batch_delay))
+    async with aiohttp.ClientSession() as session:
+      try:
+        response = await session.post(self._url, json=new_queue, headers=self._headers.update({'Accept': 'application/json', 'Content-Type': 'application/json'}))
+        response.raise_for_status()
+        response_json = await response.json()
+        for r in response_json:
+          self._emitter.emit(r[0], r[2], r[3])
+      except aiohttp.ClientError as e:
+        for q in new_queue:
+          self._emitter.emit(q[0], None, response_json)
+  
+  async def request(self, route, params=None, selector=None):
+    if not route:
+      raise ValueError('Route is required')
+    elif params and not isinstance(params, dict):
+      raise ValueError('Params should be a dict')
+    elif selector and not isinstance(selector, list):
+      raise ValueError('Selector should be a list')
+    id = str(uuid.uuid4())
+    future = asyncio.Future()
+    def callback(result, error):
+      if error:
+        future.set_exception(Exception(error['message']))
+      else:
+        future.set_result(result)
+    self._emitter.once(id, callback)
+    self._queue.append([id, route, params, selector])
+    if self._timer == False:
+      self._timer = True
+      asyncio.create_task(self._delay(self._process, self._batch_delay))
+    result = await future
+    return result
+
+
+
 def create_http_client(url, options=None):
   if options:
     print('The "options" argument is not yet used, but may be used in the future')
+  print('create_http_client is deprecated - use the HttpClient class instead')
   max_batch_size = 100
   queue = []
   timer = None
@@ -356,7 +416,7 @@ def create_http_client(url, options=None):
 
 
 
-def create_request_handler(routes, error_handler=None):
+def create_request_handler(routes):
   route_keys = list(routes.keys())
   my_routes = {}
 
@@ -402,7 +462,7 @@ def create_request_handler(routes, error_handler=None):
       raise Exception(f'Route is missing handler: {key}')
 
   async def handler(requests, context={}):
-    return await handle_request(my_routes, requests, context, error_handler)
+    return await handle_request(my_routes, requests, context)
 
   return handler
 
@@ -439,9 +499,9 @@ def validate_route(route):
 
 
 
-async def handle_request(routes, requests, context, error_handler=None):
+async def handle_request(routes, requests, context):
   if not requests or not isinstance(requests, list):
-    return handle_error(400, 'Requests should be a list')
+    return handle_error(400, 'Request should be an array')
   unique_ids = []
   promises = []
   for i in range(len(requests)):
@@ -458,9 +518,9 @@ async def handle_request(routes, requests, context, error_handler=None):
     if not route or not isinstance(route, str):
       return handle_error(400, 'Request items should have a route')
     if parameters and not isinstance(parameters, dict):
-      return handle_error(400, 'Request item parameters should be a dict')
+      return handle_error(400, 'Request item parameters should be an object')
     if selector and not isinstance(selector, list):
-      return handle_error(400, 'Request item selector should be a list')
+      return handle_error(400, 'Request item selector should be an array')
     if id in unique_ids:
       return handle_error(400, 'Request items should have unique IDs')
     unique_ids.append(id)
@@ -483,7 +543,7 @@ async def handle_request(routes, requests, context, error_handler=None):
       'requestTime': int(datetime.now().timestamp()),
       **(context or {})
     }
-    promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None, error_handler))
+    promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None))
   results = await asyncio.gather(*promises)
   return handle_result(results)
 
@@ -507,7 +567,7 @@ def route_not_found(*args):
 
 
 
-async def route_reducer(handler, request, context, timeout=None, error_handler=None):
+async def route_reducer(handler, request, context, timeout=None):
   
   safe_context = copy.deepcopy(context)
   route = request['route']

@@ -1,2 +1,2 @@
 django==4.2.2
-blest==0.0.9
+blest==0.1.2

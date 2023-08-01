@@ -2,7 +2,7 @@
 
 The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching and selective returns, and provides a modern alternative to REST. It includes examples for Django, FastAPI, and Flask.
 
-To learn more about BLEST, please refer to the white paper: https://jhunt.dev/BLEST%20White%20Paper.pdf
+To learn more about BLEST, please visit the website: https://blest.jhunt.dev
 
 For a front-end implementation in React, please visit https://github.com/jhuntdev/blest-react
 
@@ -25,13 +25,12 @@ python3 -m pip install blest
 
 ## Usage
 
-This default export of this library is an API very similar to Flask or FastAPI. For convenience it also provides a `create_request_handler` function to create a request handler suitable for use in an existing application, a `create_http_server` function to create a standalone HTTP server, and a `create_http_client` function to create a BLEST HTTP client.
-
+This core class of this library has an interface similar to Flask or FastAPI. It also provides a `Router` class with a `handle` method for use in an existing Python API and an `HttpClient` class with a `request` method for making BLEST HTTP requests.
 
 ```python
 from blest import Blest
 
-app = new Blest({ 'timeout': 1000 })
+app = Blest({ 'timeout': 1000, 'url': '/', 'host': 'localhost', 'port': 8080, 'cors': 'http://localhost:3000' })
 
 @app.before_request
 async def auth_middleware(params, context):
@@ -52,17 +51,21 @@ if __name__ == '__main__':
   app.listen(8080)
 ```
 
-### create_request_handler
+### Router
 
 The following example uses Flask, but you can find examples with other frameworks [here](examples).
 
 ```python
 from flask import Flask, make_response, request
-from blest import create_request_handler
+from blest import Router
+
+# Instantiate the Router
+router = Router({ 'timeout': 1000 })
 
 # Create some middleware (optional)
+@router.before_request
 async def auth_middleware(params, context):
-  if params['name']:
+  if params.get('name'):
     context['user'] = {
       'name': params['name']
     }
@@ -70,24 +73,21 @@ async def auth_middleware(params, context):
     raise Exception('Unauthorized')
 
 # Create a route controller
+@router.route('greet')
 async def greet_controller(params, context):
   return {
     'greeting': f"Hi, {context['user']['name']}!"
   }
 
-# Create a request_handler
-request_handler = create_request_handler({
-  'greet': [auth_middleware, greet_controller]
-})
-
+# Instantiate a Flask application
 app = Flask(__name__)
 
-# Use the request handler
+# Handle BLEST requests
 @app.post('/')
 async def index():
-  result, error = await request_handler(request.json)
+  result, error = await router.handle(request.json, { 'headers': request.headers })
   if error:
-    resp = make_response(error, 500)
+    resp = make_response(error, error.status or 500)
     resp.headers['Content-Type'] = 'application/json'
   else:
     resp = make_response(result, 200)
@@ -95,49 +95,24 @@ async def index():
     return resp
 ```
 
-### create_http_server
+### HttpClient
 
 ```python
-from blest import create_http_server, create_request_handler
-
-# Create some middleware (optional)
-async def auth_middleware(params, context):
-  if params['name']:
-    context['user'] = {
-      'name': params['name']
-    }
-  else:
-    raise Exception('Unauthorized')
-
-# Create a route controller
-async def greet_controller(params, context):
-  return {
-    'greeting': f"Hi, {context['user']['name']}!"
-  }
-
-# Create a request_handler
-request_handler = create_request_handler({
-  'greet': [auth_middleware, greet_controller]
-})
-
-run = create_http_server(request_handler)
-
-if __name__ == '__main__':
-  run()
-```
-
-### create_http_client
-
-```python
-from blest import create_http_client
-
-# Create a client
-request = create_http_client('http://localhost:8080')
+from blest import HttpClient
 
 async def main():
+  # Create a client
+  client = HttpClient('http://localhost:8080', {
+    'max_batch_size': 25,
+    'buffer_delay': 10,
+    'headers': {
+      'Authorization': 'Bearer token'
+    }
+  })
+
   # Send a request
   try:
-    result = await request('greet', { 'name': 'Steve' }, ['greeting'])
+    result = await client.request('greet', { 'name': 'Steve' }, ['greeting'])
     # Do something with the result
   except Exception as error:
     # Do something in case of error

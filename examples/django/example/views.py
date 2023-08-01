@@ -1,7 +1,10 @@
 import json
 from django.http.response import JsonResponse
-from blest import create_request_handler
+from blest import Router
 
+router = Router()
+
+@router.route('hello')
 async def hello(params, context):
   return {
     'hello': 'world',
@@ -10,25 +13,26 @@ async def hello(params, context):
     'hallo': 'welt'
   }
 
+@router.route('greet')
 async def greet(params, context):
   return {
     'greeting': 'Hi, ' + params.get('name') + '!'
   }
 
+@router.route('fail')
 async def fail(params, context):
   raise Exception('Intentional failure')
-
-request_handler = create_request_handler({
-  'hello': hello,
-  'greet': greet,
-  'fail': fail
-})
 
 async def index(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            result, error = await request_handler(data)
+            headers = {}
+            for key, value in request.META.items():
+              if key.startswith('HTTP_'):
+                header_key = key[5:].replace('_', '-').title()
+                headers[header_key] = value
+            result, error = await router.handle(data, { 'headers': headers })
             if error:
                 return JsonResponse(error, status=500)
             else:
