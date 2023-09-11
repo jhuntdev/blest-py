@@ -25,7 +25,7 @@ python3 -m pip install blest
 
 ## Usage
 
-This core class of this library has an interface similar to Flask or FastAPI. It also provides a `Router` class with a `handle` method for use in an existing Python API and an `HttpClient` class with a `request` method for making BLEST HTTP requests.
+The `Blest` class of this library has an interface similar to Flask or FastAPI. It also provides a `Router` class with a `handle` method for use in an existing Python API and an `HttpClient` class with a `request` method for making BLEST HTTP requests.
 
 ```python
 from blest import Blest
