@@ -32,18 +32,19 @@ from blest import Blest
 app = Blest({ 'timeout': 1000, 'url': '/', 'host': 'localhost', 'port': 8080, 'cors': 'http://localhost:3000' })
 
 @app.before_request
-async def auth_middleware(params, context):
-  if params.get('name'):
+async def auth_middleware(body, context):
+  if context['headers']['auth'] == 'myToken':
     context['user'] = {
-      'name': params['name']
+      # user info for example
     }
+    return
   else:
     raise Exception('Unauthorized')
 
 @app.route('greet')
-async def greet_controller(params, context):
+async def greet_controller(body, context):
   return {
-    'greeting': f"Hi, {context['user']['name']}!"
+    'greeting': f"Hi, {body['name']}!"
   }
 
 if __name__ == '__main__':
@@ -63,19 +64,20 @@ router = Router({ 'timeout': 1000 })
 
 # Create some middleware (optional)
 @router.before_request
-async def auth_middleware(params, context):
-  if params.get('name'):
+async def auth_middleware(body, context):
+  if context['headers']['auth'] == 'myToken':
     context['user'] = {
-      'name': params['name']
+      # user info for example
     }
+    return
   else:
     raise Exception('Unauthorized')
 
 # Create a route controller
 @router.route('greet')
-async def greet_controller(params, context):
+async def greet_controller(body, context):
   return {
-    'greeting': f"Hi, {context['user']['name']}!"
+    'greeting': f"Hi, {body['name']}!"
   }
 
 # Instantiate a Flask application
@@ -104,14 +106,14 @@ async def main():
   client = HttpClient('http://localhost:8080', {
     'max_batch_size': 25,
     'buffer_delay': 10,
-    'headers': {
+    'http_headers': {
       'Authorization': 'Bearer token'
     }
   })
 
   # Send a request
   try:
-    result = await client.request('greet', { 'name': 'Steve' }, ['greeting'])
+    result = await client.request('greet', { 'name': 'Steve' }, { 'auth': 'myToken' })
     # Do something with the result
   except Exception as error:
     # Do something in case of error
