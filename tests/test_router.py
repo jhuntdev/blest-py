@@ -14,39 +14,39 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
         cls.benchmarks = []
 
         @cls.router.before_request()
-        def middleware(parameters, context):
+        def middleware(body, context):
             context['test'] = {
-                'value': parameters['testValue']
+                'value': body['testValue']
             }
 
         @cls.router.after_request()
         def trailing_middleware(_, context):
             complete_time = time.time()
-            difference = complete_time - context['requestTime']
+            difference = complete_time - context['time']
             cls.benchmarks.append(difference)
 
         @cls.router.route('basicRoute')
-        def basic_route(parameters, context):
-            return {'route': 'basicRoute', 'parameters': parameters, 'context': context}
+        def basic_route(body, context):
+            return {'route': 'basicRoute', 'body': body, 'context': context}
 
         router2 = Router({ 'timeout': 100 })
 
         @router2.route('mergedRoute')
-        def merged_route(parameters, context):
-            return {'route': 'mergedRoute', 'parameters': parameters, 'context': context}
+        def merged_route(body, context):
+            return {'route': 'mergedRoute', 'body': body, 'context': context}
 
         @router2.route('timeoutRoute')
-        async def timeout_route(parameters, _):
+        async def timeout_route(body, _):
             await asyncio.sleep(0.2)
-            return {'testValue': parameters['testValue']}
+            return {'testValue': body['testValue']}
 
         cls.router.merge(router2)
 
         router3 = Router()
 
         @router3.route('errorRoute')
-        def error_route(parameters, _):
-            error = BlestError(parameters['testValue'], code='ERROR_' + str(round(parameters['testValue'] * 10)))
+        def error_route(body, _):
+            error = BlestError(body['testValue'], code='ERROR_' + str(round(body['testValue'] * 10)))
             raise error
 
         cls.router.namespace('subRoutes', router3)
@@ -111,8 +111,8 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
 
     async def test_accept_parameters(self):
         await self.run_routes()
-        self.assertAlmostEqual(float(self.result1[0][2]['parameters']['testValue']), self.testValue1)
-        self.assertAlmostEqual(float(self.result2[0][2]['parameters']['testValue']), self.testValue2)
+        self.assertAlmostEqual(float(self.result1[0][2]['body']['testValue']), self.testValue1)
+        self.assertAlmostEqual(float(self.result2[0][2]['body']['testValue']), self.testValue2)
 
     async def test_respect_context(self):
         await self.run_routes()

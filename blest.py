@@ -1,9 +1,9 @@
 # -------------------------------------------------------------------------------------------------
 # BLEST (Batch-able, Lightweight, Encrypted State Transfer) - A modern alternative to REST
-# (c) 2023 JHunt <blest@jhunt.dev>
+# (c) 2023 JHunt <hello@jhunt.dev>
 # License: MIT
 # -------------------------------------------------------------------------------------------------
-# Sample Request [id, route, parameters (optional), selector (optional)]
+# Sample Request [id, route, body (optional), headers (optional)]
 # [
 #   [
 #     "abc123",
@@ -13,7 +13,9 @@
 #       "dividend": 22,
 #       "divisor": 7
 #     },
-#     ["status",["result",["quotient"]]]
+#     {
+#       ...
+#     }
 #   ]
 # ]
 # -------------------------------------------------------------------------------------------------
@@ -73,8 +75,7 @@ class Router:
       self.routes[route] = {
         'handler': [*self._middleware, handler, *self._afterware],
         'description': None,
-        'parameters': None,
-        'result': None,
+        'schema': None,
         'visible': self._introspection,
         'validate': False,
         'timeout': self._timeout
@@ -109,15 +110,10 @@ class Router:
         raise ValueError('Description should be a str')
       self.routes[route]['description'] = config['description']
 
-    if 'parameters' in config:
-      if config['parameters'] is not None and not isinstance(config['parameters'], dict):
-        raise ValueError('Parameters should be a dict')
-      self.routes[route]['parameters'] = config['parameters']
-
-    if 'result' in config:
-      if config['result'] is not None and not isinstance(config['result'], dict):
-        raise ValueError('Result should be a dict')
-      self.routes[route]['result'] = config['result']
+    if 'schema' in config:
+      if config['schema'] is not None and not isinstance(config['schema'], dict):
+        raise ValueError('Schema should be a dict')
+      self.routes[route]['schema'] = config['schema']
 
     if 'visible' in config:
       if config['visible'] is not None and config['visible'] not in [True, False]:
@@ -309,11 +305,11 @@ class BlestError(Exception):
 
 
 class HttpClient:
-  def __init__(self, url, max_batch_size=25, batch_delay=10, headers={}):
+  def __init__(self, url, max_batch_size=25, batch_delay=10, http_headers={}):
     self._url = url
     self._max_batch_size = max_batch_size
     self._batch_delay = batch_delay
-    self._headers = headers
+    self._http_headers = http_headers
     self._timer = False
     self._queue = []
     self._emitter = EventEmitter()
@@ -332,7 +328,7 @@ class HttpClient:
       asyncio.create_task(self._delay(self._process, self._batch_delay))
     async with aiohttp.ClientSession() as session:
       try:
-        response = await session.post(self._url, json=new_queue, headers=self._headers.update({'Accept': 'application/json', 'Content-Type': 'application/json'}))
+        response = await session.post(self._url, json=new_queue, headers=self._http_headers.update({'Accept': 'application/json', 'Content-Type': 'application/json'}))
         response.raise_for_status()
         response_json = await response.json()
         for r in response_json:
@@ -341,13 +337,13 @@ class HttpClient:
         for q in new_queue:
           self._emitter.emit(q[0], None, response_json)
   
-  async def request(self, route, params=None, selector=None):
+  async def request(self, route, body=None, headers=None):
     if not route:
       raise ValueError('Route is required')
-    elif params and not isinstance(params, dict):
-      raise ValueError('Params should be a dict')
-    elif selector and not isinstance(selector, list):
-      raise ValueError('Selector should be a list')
+    elif body and not isinstance(body, dict):
+      raise ValueError('Body should be a dict')
+    elif headers and not isinstance(headers, dict):
+      raise ValueError('Headers should be a dict')
     id = str(uuid.uuid4())
     future = asyncio.Future()
     def callback(result, error):
@@ -356,7 +352,7 @@ class HttpClient:
       else:
         future.set_result(result)
     self._emitter.once(id, callback)
-    self._queue.append([id, route, params, selector])
+    self._queue.append([id, route, body, headers])
     if self._timer == False:
       self._timer = True
       asyncio.create_task(self._delay(self._process, self._batch_delay))
@@ -392,14 +388,14 @@ def create_http_client(url, options=None):
       except aiohttp.ClientError as e:
         for q in new_queue:
           emitter.emit(q[0], None, response_json)
-  async def request(route, params=None, selector=None):
+  async def request(route, body=None, headers=None):
     nonlocal timer
     if not route:
       raise ValueError('Route is required')
-    elif params and not isinstance(params, dict):
-      raise ValueError('Params should be a dict')
-    elif selector and not isinstance(selector, list):
-      raise ValueError('Selector should be a list')
+    elif body and not isinstance(body, dict):
+      raise ValueError('Body should be a dict')
+    elif headers and not isinstance(headers, dict):
+      raise ValueError('Headers should be a dict')
     id = str(uuid.uuid4())
     future = asyncio.Future()
     def callback(result, error):
@@ -408,7 +404,7 @@ def create_http_client(url, options=None):
       else:
         future.set_result(result)
     emitter.once(id, callback)
-    queue.append([id, route, params, selector])
+    queue.append([id, route, body, headers])
     if not timer:
       timer = asyncio.create_task(process())
     return await future
@@ -469,16 +465,25 @@ def create_request_handler(routes):
 
 
 route_regex = r"^[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9]$"
+system_route_regex = r"^_[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9]$"
 
-def validate_route(route):
+def validate_route(route, system=False):
     if not route:
         return 'Route is required'
-    elif not re.match(route_regex, route):
+    elif system and not re.match(system_route_regex, route):
+        routeLength = len(route)
+        if routeLength < 3:
+            return 'System route should be at least three characters long'
+        elif route[0] != '_':
+            return 'System route should start with an underscore'
+        elif not re.match(r"[a-zA-Z0-9]", route[-1]):
+            return 'System route should end with a letter or a number'
+        else:
+            return 'System route should contain only letters, numbers, dashes, underscores, and forward slashes'
+    elif not system and not re.match(route_regex, route):
         routeLength = len(route)
         if routeLength < 2:
             return 'Route should be at least two characters long'
-        elif route[-1] == '/':
-            return 'Route should not end in a forward slash'
         elif not re.match(r"[a-zA-Z]", route[0]):
             return 'Route should start with a letter'
         elif not re.match(r"[a-zA-Z0-9]", route[-1]):
@@ -511,16 +516,16 @@ async def handle_request(routes, requests, context):
       return handle_error(400, 'Request item should be an array')
     id = request[0] if len(request) > 0 else None
     route = request[1] if len(request) > 1 else None
-    parameters = request[2] if len(request) > 2 else None
-    selector = request[3] if len(request) > 3 else None
+    body = request[2] if len(request) > 2 else None
+    headers = request[3] if len(request) > 3 else None
     if not id or not isinstance(id, str):
       return handle_error(400, 'Request item should have an ID')
     if not route or not isinstance(route, str):
       return handle_error(400, 'Request items should have a route')
-    if parameters and not isinstance(parameters, dict):
-      return handle_error(400, 'Request item parameters should be an object')
-    if selector and not isinstance(selector, list):
-      return handle_error(400, 'Request item selector should be an array')
+    if body and not isinstance(body, dict):
+      return handle_error(400, 'Request item body should be an object')
+    if headers and not isinstance(headers, list):
+      return handle_error(400, 'Request item headers should be an object')
     if id in unique_ids:
       return handle_error(400, 'Request items should have unique IDs')
     unique_ids.append(id)
@@ -533,15 +538,15 @@ async def handle_request(routes, requests, context):
     request_object = {
       'id': id,
       'route': route,
-      'parameters': parameters or {},
-      'selector': selector
+      'body': body or {},
+      'headers': headers
     }
     my_context = {
-      'requestId': id,
-      'routeName': route,
-      'selector': selector,
-      'requestTime': int(datetime.now().timestamp()),
-      **(context or {})
+      **(context or {}),
+      'id': id,
+      'route': route,
+      'headers': headers,
+      'time': int(datetime.now().timestamp())
     }
     promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None))
   results = await asyncio.gather(*promises)
@@ -570,6 +575,7 @@ def route_not_found(*args):
 async def route_reducer(handler, request, context, timeout=None):
   
   safe_context = copy.deepcopy(context)
+  safe_body = request['body'] or {}
   route = request['route']
   result = None
 
@@ -579,10 +585,10 @@ async def route_reducer(handler, request, context, timeout=None):
       for i in range(len(handler)):
         temp_result = None
         if asyncio.iscoroutinefunction(handler[i]):
-          temp_result = await handler[i](request['parameters'], safe_context)
+          temp_result = await handler[i](safe_body, safe_context)
         elif callable(handler[i]):
           loop = asyncio.get_event_loop()
-          temp_result = await loop.run_in_executor(None, handler[i], request['parameters'], safe_context)
+          temp_result = await loop.run_in_executor(None, handler[i], safe_body, safe_context)
         else:
           print(f'Tried to resolve route "{route}" with handler of type "{type(handler[i])}"')
           return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
@@ -594,10 +600,10 @@ async def route_reducer(handler, request, context, timeout=None):
             result = temp_result
     else:
       if asyncio.iscoroutinefunction(handler):
-        result = await handler(request['parameters'], safe_context)
+        result = await handler(safe_body, safe_context)
       elif callable(handler):
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, handler, request['parameters'], safe_context)
+        result = await loop.run_in_executor(None, handler, safe_body, safe_context)
       else:
         print(f'Tried to resolve route "{route}" with handler of type "{type(handler)}"')
         return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
@@ -617,8 +623,8 @@ async def route_reducer(handler, request, context, timeout=None):
     if result is None or not isinstance(result, dict):
       print(f'The route "{route}" did not return a result object')
       return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
-    if request['selector']:
-      result = filter_object(result, request['selector'])
+    # if request['selector']:
+    #   result = filter_object(result, request['selector'])
     return [request['id'], request['route'], result, None]
   except Exception as error:
     traceback.print_exc()

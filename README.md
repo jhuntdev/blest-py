@@ -1,6 +1,6 @@
 # BLEST Python
 
-The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching and selective returns, and provides a modern alternative to REST. It includes examples for Django, FastAPI, and Flask.
+The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching by default, and provides a modern alternative to REST. It includes examples for Django, FastAPI, and Flask.
 
 To learn more about BLEST, please visit the website: https://blest.jhunt.dev
 
@@ -10,8 +10,7 @@ For a front-end implementation in React, please visit https://github.com/jhuntde
 
 - Built on JSON - Reduce parsing time and overhead
 - Request Batching - Save bandwidth and reduce load times
-- Compact Payloads - Save more bandwidth
-- Selective Returns - Save even more bandwidth
+- Compact Payloads - Save even more bandwidth
 - Single Endpoint - Reduce complexity and improve data privacy
 - Fully Encrypted - Improve data privacy
 
