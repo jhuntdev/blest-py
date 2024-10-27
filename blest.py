@@ -14,7 +14,7 @@
 #       "divisor": 7
 #     },
 #     {
-#       ...
+#       "auth": "myToken"
 #     }
 #   ]
 # ]
@@ -41,15 +41,15 @@ import traceback
 import aiohttp
 from aiohttp import web
 import asyncio
-import uuid
+from uuid import uuid1 as uuid
 import json
 import copy
 import os
 import re
-import time
-import threading
-from datetime import datetime
-from functools import partial
+# import time
+# import threading
+# from datetime import datetime
+# from functools import partial
 
 class Router:
 
@@ -344,7 +344,7 @@ class HttpClient:
       raise ValueError('Body should be a dict')
     elif headers and not isinstance(headers, dict):
       raise ValueError('Headers should be a dict')
-    id = str(uuid.uuid4())
+    id = str(uuid())
     future = asyncio.Future()
     def callback(result, error):
       if error:
@@ -396,7 +396,7 @@ def create_http_client(url, options=None):
       raise ValueError('Body should be a dict')
     elif headers and not isinstance(headers, dict):
       raise ValueError('Headers should be a dict')
-    id = str(uuid.uuid4())
+    id = str(uuid())
     future = asyncio.Future()
     def callback(result, error):
       if error:
@@ -507,6 +507,7 @@ def validate_route(route, system=False):
 async def handle_request(routes, requests, context):
   if not requests or not isinstance(requests, list):
     return handle_error(400, 'Request should be an array')
+  batch_id = uuid()
   unique_ids = []
   promises = []
   for i in range(len(requests)):
@@ -543,10 +544,10 @@ async def handle_request(routes, requests, context):
     }
     my_context = {
       **(context or {}),
-      'id': id,
+      'batch_id': batch_id,
+      'request_id': id,
       'route': route,
-      'headers': headers,
-      'time': int(datetime.now().timestamp())
+      'headers': headers
     }
     promises.append(route_reducer(route_handler, request_object, my_context, this_route.get('timeout') if this_route else None))
   results = await asyncio.gather(*promises)
