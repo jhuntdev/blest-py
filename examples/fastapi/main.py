@@ -6,7 +6,7 @@ app = FastAPI()
 router = Router()
 
 @router.route('hello')
-async def hello(params, context):
+async def hello(body, context):
   return {
     'hello': 'world',
     'bonjour': 'le monde',
@@ -15,13 +15,13 @@ async def hello(params, context):
   }
 
 @router.route('greet')
-async def greet(params, context):
+async def greet(body, context):
   return {
-    'greeting': 'Hi, ' + params.get('name') + '!'
+    'greeting': 'Hi, ' + body.get('name') + '!'
   }
 
 @router.route('fail')
-async def fail(params, context):
+async def fail(body, context):
   raise Exception('Intentional failure')
 
 @app.post('/')
