@@ -24,33 +24,6 @@ python3 -m pip install blest
 
 ## Usage
 
-The `Blest` class of this library has an interface similar to Flask or FastAPI. It also provides a `Router` class with a `handle` method for use in an existing Python API and an `HttpClient` class with a `request` method for making BLEST HTTP requests.
-
-```python
-from blest import Blest
-
-app = Blest({ 'timeout': 1000, 'url': '/', 'host': 'localhost', 'port': 8080, 'cors': 'http://localhost:3000' })
-
-@app.before_request
-async def auth_middleware(body, context):
-  if context['headers']['auth'] == 'myToken':
-    context['user'] = {
-      # user info for example
-    }
-    return
-  else:
-    raise Exception('Unauthorized')
-
-@app.route('greet')
-async def greet_controller(body, context):
-  return {
-    'greeting': f"Hi, {body['name']}!"
-  }
-
-if __name__ == '__main__':
-  app.listen(8080)
-```
-
 ### Router
 
 The following example uses Flask, but you can find examples with other frameworks [here](examples).

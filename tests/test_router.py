@@ -3,7 +3,6 @@ import time
 import uuid
 import random
 import asyncio
-from unittest.mock import Mock
 from blest import Router, BlestError
 
 class TestRouter(unittest.IsolatedAsyncioTestCase):
@@ -18,6 +17,7 @@ class TestRouter(unittest.IsolatedAsyncioTestCase):
             context['test'] = {
                 'value': body['testValue']
             }
+            context['time'] = time.time()
 
         @cls.router.after_request()
         def trailing_middleware(_, context):

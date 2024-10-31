@@ -5,9 +5,10 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="blest",
-    version="1.0.0",
+    version="1.0.1",
     author="JHunt",
     author_email="hello@jhunt.dev",
+    license="MIT",
     description="The Python reference implementation of BLEST (Batch-able, Lightweight, Encrypted State Transfer), an improved communication protocol for web APIs which leverages JSON, supports request batching by default, and provides a modern alternative to REST.",
     long_description=readme,
     long_description_content_type="text/markdown",

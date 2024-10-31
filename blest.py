@@ -1,6 +1,6 @@
 # -------------------------------------------------------------------------------------------------
 # BLEST (Batch-able, Lightweight, Encrypted State Transfer) - A modern alternative to REST
-# (c) 2023 JHunt <hello@jhunt.dev>
+# (c) 2023-2024 JHunt <hello@jhunt.dev>
 # License: MIT
 # -------------------------------------------------------------------------------------------------
 # Sample Request [id, route, body (optional), headers (optional)]
@@ -39,17 +39,10 @@
 
 import traceback
 import aiohttp
-from aiohttp import web
 import asyncio
 from uuid import uuid1 as uuid
-import json
 import copy
-import os
 import re
-# import time
-# import threading
-# from datetime import datetime
-# from functools import partial
 
 class Router:
 
@@ -180,105 +173,6 @@ class Router:
 
 
 
-class Blest(Router):
-
-  def __init__(self, options=None):
-    self._options = options
-    self._errorhandler = None
-    super().__init__(options)
-
-  def errorhandler(self):
-    def decorator(errorhandler):
-      self._errorhandler = errorhandler
-      print('The @errorhandler() decorator is not currently used')
-    return decorator
-
-  def listen(self, **args):
-    request_handler = create_request_handler(self.routes)
-    server = create_http_server(request_handler, self._options)
-    server(*args)
-
-
-
-def create_http_server(request_handler, options=None):
-  if options:
-    options_error = validate_server_options(options)
-    if options_error:
-      raise ValueError(options_error)
-
-  url = options['url'] if options and 'url' in options else '/'
-
-  http_headers = {
-    'access-control-allow-origin': options['accessControlAllowOrigin'] if options and 'accessControlAllowOrigin' in options else ('*' if options and 'cors' in options and (isinstance(options['cors'], str) or options['cors'] is True) else ''),
-    'content-security-policy': options['contentSecurityPolicy'] if options and 'contentSecurityPolicy' in options else "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
-    'cross-origin-opener-policy': options['crossOriginOpenerPolicy'] if options and 'crossOriginOpenerPolicy' in options else 'same-origin',
-    'cross-origin-resource-policy': options['crossOriginResourcePolicy'] if options and 'crossOriginResourcePolicy' in options else 'same-origin',
-    'origin-agent-cluster': options['originAgentCluster'] if options and 'originAgentCluster' in options else '?1',
-    'referrer-policy': options['referrerPolicy'] if options and 'referrerPolicy' in options else 'no-referrer',
-    'strict-transport-security': options['strictTransportSecurity'] if options and 'strictTransportSecurity' in options else 'max-age=15552000; includeSubDomains',
-    'x-content-type-options': options['xContentTypeOptions'] if options and 'xContentTypeOptions' in options else 'nosniff',
-    'x-dns-prefetch-control': options['xDnsPrefetchOptions'] if options and 'xDnsPrefetchOptions' in options else 'off',
-    'x-download-options': options['xDownloadOptions'] if options and 'xDownloadOptions' in options else 'noopen',
-    'x-frame-options': options['xFrameOptions'] if options and 'xFrameOptions' in options else 'SAMEORIGIN',
-    'x-permitted-cross-domain-policies': options['xPermittedCrossDomainPolicies'] if options and 'xPermittedCrossDomainPolicies' in options else 'none',
-    'x-xss-protection': options['xXssProtection'] if options and 'xXssProtection' in options else '0'
-  }
-
-  async def handle_req(request):
-    if request.path == url:
-      if request.method == 'POST':
-        try:
-          json_data = await request.json()
-        except json.JSONDecodeError as error:
-          return web.Response(status=400, headers=http_headers, text=str(error))
-        try:
-          context = {'headers': {key: value for key, value in request.headers.items()}}
-          result, error = await request_handler(json_data, context)
-          if error:
-            return web.Response(status=error['status'] if hasattr(error, 'status') else 500, headers=http_headers, text=str(error))
-          elif result:
-            json_result = json.dumps(result)
-            return web.Response(text=json_result, status=200, headers={ 'Content-Type': 'application/json', **http_headers })
-          else:
-            return web.Response(status=500, headers=http_headers)
-        except Exception as error:
-          print(error)
-          return web.Response(status=500, headers=http_headers, text=str(error))
-      elif request.method == 'OPTIONS':
-        return web.Response(status=204, headers=http_headers)
-      else:
-        return web.Response(status=405, headers=http_headers)
-    else:
-      return web.Response(status=404, headers=http_headers)
-
-  app = web.Application()
-  app.router.add_route('*', '/{tail:.*}', handle_req)
-  
-  def run(port=os.getenv('PORT') or 8080, host=os.getenv('HOST') or 'localhost'):
-    web.run_app(app, port=port, host=host)
-
-  return run
-
-
-
-def validate_server_options(options):
-  if not options:
-    return None
-  elif not isinstance(options, dict):
-    return 'Options should be an object'
-  else:
-    if 'url' in options:
-      if not isinstance(options['url'], str):
-        return '"url" option should be a str'
-      elif not options['url'].startswith('/'):
-        return '"url" option should begin with a forward slash'
-    if 'cors' in options:
-      if not isinstance(options['cors'], (str, bool)):
-        return '"cors" option should be a str or bool'
-  return None
-
-
-
 class EventEmitter:
   def __init__(self):
     self.listeners = {}
@@ -361,109 +255,6 @@ class HttpClient:
 
 
 
-def create_http_client(url, options=None):
-  if options:
-    print('The "options" argument is not yet used, but may be used in the future')
-  print('create_http_client is deprecated - use the HttpClient class instead')
-  max_batch_size = 100
-  queue = []
-  timer = None
-  emitter = EventEmitter()
-  async def process():
-    nonlocal queue
-    nonlocal timer
-    new_queue = queue[:max_batch_size]
-    del queue[:max_batch_size]
-    if not queue:
-      timer = None
-    else:
-      timer = asyncio.create_task(process())
-    async with aiohttp.ClientSession() as session:
-      try:
-        response = await session.post(url, json=new_queue, headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
-        response.raise_for_status()
-        response_json = await response.json()
-        for r in response_json:
-          emitter.emit(r[0], r[2], r[3])
-      except aiohttp.ClientError as e:
-        for q in new_queue:
-          emitter.emit(q[0], None, response_json)
-  async def request(route, body=None, headers=None):
-    nonlocal timer
-    if not route:
-      raise ValueError('Route is required')
-    elif body and not isinstance(body, dict):
-      raise ValueError('Body should be a dict')
-    elif headers and not isinstance(headers, dict):
-      raise ValueError('Headers should be a dict')
-    id = str(uuid())
-    future = asyncio.Future()
-    def callback(result, error):
-      if error:
-        future.set_exception(Exception(error['message']))
-      else:
-        future.set_result(result)
-    emitter.once(id, callback)
-    queue.append([id, route, body, headers])
-    if not timer:
-      timer = asyncio.create_task(process())
-    return await future
-  return request
-
-
-
-def create_request_handler(routes):
-  route_keys = list(routes.keys())
-  my_routes = {}
-
-  for i in range(len(route_keys)):
-    key = route_keys[i]
-    route_error = validate_route(key)
-    if route_error:
-      raise Exception(f'{route_error}: {key}')
-
-    route = routes.get(key)
-    
-    if isinstance(route, list):
-      if not route:
-        raise Exception(f'Route has no handlers: {key}')
-      
-      for j in range(len(route)):
-        if not callable(route[j]):
-          raise Exception(f'All route handlers must be functions: {key}')
-        
-      my_routes[key] = {'handler': route}
-    
-    elif isinstance(route, dict):
-      if 'handler' not in route:
-        raise Exception(f'Route has no handlers: {key}')
-      
-      if not isinstance(route['handler'], list):
-        if not callable(route['handler']):
-          raise Exception(f'Route handler is not valid: {key}')
-        my_routes[key] = {
-          **route,
-          'handler': [route['handler']]
-        }
-      else:
-        for j in range(len(route['handler'])):
-          if not callable(route['handler'][j]):
-            raise Exception(f'All route handlers must be functions: {key}')    
-        my_routes[key] = route.copy()
-    
-    elif callable(route):
-      my_routes[key] = {'handler': [route]}
-    
-    else:
-      raise Exception(f'Route is missing handler: {key}')
-
-  async def handler(requests, context={}):
-    return await handle_request(my_routes, requests, context)
-
-  return handler
-
-
-
 route_regex = r"^[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9]$"
 system_route_regex = r"^_[a-zA-Z][a-zA-Z0-9_\-\/]*[a-zA-Z0-9]$"
 
@@ -512,7 +303,7 @@ async def handle_request(routes, requests, context):
   promises = []
   for i in range(len(requests)):
     request = requests[i]
-    request_length = len(request)
+    # request_length = len(request)
     if not isinstance(request, list):
       return handle_error(400, 'Request item should be an array')
     id = request[0] if len(request) > 0 else None
