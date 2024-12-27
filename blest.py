@@ -14,7 +14,7 @@
 #       "divisor": 7
 #     },
 #     {
-#       "auth": "myToken"
+#       "_s": ["result"]
 #     }
 #   ]
 # ]
@@ -415,8 +415,8 @@ async def route_reducer(handler, request, context, timeout=None):
     if result is None or not isinstance(result, dict):
       print(f'The route "{route}" did not return a result object')
       return [request['id'], request['route'], None, { 'message': 'Internal Server Error', 'status': 500 }]
-    # if request['selector']:
-    #   result = filter_object(result, request['selector'])
+    if request.get('headers') and request['headers'].get('_s'):
+      result = filter_object(result, request['headers']['_s'])
     return [request['id'], request['route'], result, None]
   except Exception as error:
     traceback.print_exc()

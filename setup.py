@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="blest",
-    version="1.0.1",
+    version="1.0.2",
     author="JHunt",
     author_email="hello@jhunt.dev",
     license="MIT",

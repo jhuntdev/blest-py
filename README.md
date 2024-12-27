@@ -86,7 +86,7 @@ async def main():
 
   # Send a request
   try:
-    result = await client.request('greet', { 'name': 'Steve' }, { 'auth': 'myToken' })
+    result = await client.request('greet', { 'name': 'Steve' })
     # Do something with the result
   except Exception as error:
     # Do something in case of error
