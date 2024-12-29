@@ -29,7 +29,7 @@ async def fail(body, context):
 async def index(request: Request):
   data = await request.json()
   headers = dict(request.headers)
-  result, error = await router.handle(data, { 'headers': headers })
+  result, error = await router.handle(data, { 'httpHeaders': headers })
   if error:
     raise HTTPException(status_code=500, detail=error['message'])
   else:

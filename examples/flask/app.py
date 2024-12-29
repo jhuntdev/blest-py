@@ -27,7 +27,7 @@ async def fail(body, context):
 @app.post('/')
 async def index():
   headers = dict(request.headers)
-  result, error = await router.handle(request.json, { 'headers': headers })
+  result, error = await router.handle(request.json, { 'httpHeaders': headers })
   if error:
     resp = make_response(error, 500)
     resp.headers['Content-Type'] = 'application/json'

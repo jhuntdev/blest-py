@@ -32,7 +32,7 @@ async def index(request):
               if key.startswith('HTTP_'):
                 header_key = key[5:].replace('_', '-').title()
                 headers[header_key] = value
-            result, error = await router.handle(data, { 'headers': headers })
+            result, error = await router.handle(data, { 'httpHeaders': headers })
             if error:
                 return JsonResponse(error, status=500)
             else:

@@ -56,7 +56,7 @@ app = Flask(__name__)
 # Handle BLEST requests
 @app.post('/')
 async def index():
-  result, error = await router.handle(request.json, { 'headers': request.headers })
+  result, error = await router.handle(request.json, { 'httpHeaders': request.headers })
   if error:
     resp = make_response(error, error.status or 500)
     resp.headers['Content-Type'] = 'application/json'
