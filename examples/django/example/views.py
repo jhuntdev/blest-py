@@ -1,4 +1,4 @@
-import json
+import random
 from django.http.response import JsonResponse
 from blest import Router
 
@@ -6,12 +6,12 @@ router = Router()
 
 @router.route('hello')
 async def hello(body, context):
-  return {
-    'hello': 'world',
-    'bonjour': 'le monde',
-    'hola': 'mundo',
-    'hallo': 'welt'
-  }
+  return random.choice([
+    { 'hello': 'world' },
+    { 'bonjour': 'le monde' },
+    { 'hola': 'mundo' },
+    { 'hallo': 'welt' }
+  ])
 
 @router.route('greet')
 async def greet(body, context):

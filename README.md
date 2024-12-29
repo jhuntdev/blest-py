@@ -37,14 +37,11 @@ router = Router({ 'timeout': 1000 })
 
 # Create some middleware (optional)
 @router.before_request
-async def auth_middleware(body, context):
-  if context['headers']['auth'] == 'myToken':
-    context['user'] = {
-      # user info for example
-    }
-    return
-  else:
-    raise Exception('Unauthorized')
+async def user_middleware(body, context):
+  context['user'] = {
+    # user info for example
+  }
+  return
 
 # Create a route controller
 @router.route('greet')
